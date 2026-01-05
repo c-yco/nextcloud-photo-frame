@@ -17,8 +17,9 @@ services:
 
   worker:
     image: ghcr.io/c-yco/nextcloud-photo-frame-worker:main
-    build: .
-    command: python scanner.py
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
     environment:
       - REDIS_HOST=redis
       - NC_URL=${NC_URL}
