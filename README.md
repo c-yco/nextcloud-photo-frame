@@ -21,6 +21,7 @@ A Dockerized application that displays random photos from a Nextcloud instance w
     *   **NC_USER**: Your Nextcloud username.
     *   **NC_PASS**: An App Password (generated in Nextcloud Security settings).
     *   **NC_PHOTO_PATH**: The folder to scan (e.g., `/Photos/`).
+    *   **WEATHER_LAT** / **WEATHER_LON**: (Optional) Coordinates for weather display.
 
 3.  Build and run with Docker Compose:
     ```bash
@@ -34,6 +35,8 @@ A Dockerized application that displays random photos from a Nextcloud instance w
 - **Weighted Random Selection**: Recent photos (last 3 months) and Favorites get higher priority.
 - **EXIF Data**: Displays date taken and GPS status.
 - **Image Proxy**: Serves images securely from Nextcloud through the app.
+- **Weather Display**: Shows current and tomorrow's weather (requires lat/lon config). Get LAT & LON values from https://www.latlong.net/ for example
+
 
 ## AI Disclaimer
 

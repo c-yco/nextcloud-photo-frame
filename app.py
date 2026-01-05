@@ -44,6 +44,54 @@ def index():
 
     scanner_status = r.get("scanner:status") or "idle"
 
+    # Weather Logic
+    weather_data = None
+    lat = os.getenv('WEATHER_LAT')
+    lon = os.getenv('WEATHER_LON')
+    
+    if lat and lon:
+        try:
+            # Check cache first (15 min cache)
+            cached_weather = r.get("weather:data")
+            if cached_weather:
+                import json
+                weather_data = json.loads(cached_weather)
+            else:
+                # Fetch from Open-Meteo
+                url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current=temperature_2m,weather_code&daily=weather_code,temperature_2m_max,temperature_2m_min&timezone=auto&forecast_days=2"
+                resp = requests.get(url, timeout=5)
+                if resp.status_code == 200:
+                    w = resp.json()
+                    
+                    # WMO Weather Codes mapping (simplified)
+                    def get_icon(code):
+                        if code == 0: return "☀️"
+                        if code in [1,2,3]: return "⛅"
+                        if code in [45,48]: return "🌫️"
+                        if code in [51,53,55,61,63,65]: return "🌧️"
+                        if code in [71,73,75,77]: return "❄️"
+                        if code in [95,96,99]: return "⛈️"
+                        return "🌡️"
+
+                    current_temp = round(w['current']['temperature_2m'])
+                    current_icon = get_icon(w['current']['weather_code'])
+                    
+                    # Tomorrow
+                    tomorrow_max = round(w['daily']['temperature_2m_max'][1])
+                    tomorrow_min = round(w['daily']['temperature_2m_min'][1])
+                    tomorrow_icon = get_icon(w['daily']['weather_code'][1])
+                    
+                    weather_data = {
+                        'current': {'temp': current_temp, 'icon': current_icon},
+                        'tomorrow': {'max': tomorrow_max, 'min': tomorrow_min, 'icon': tomorrow_icon}
+                    }
+                    
+                    # Cache for 15 mins
+                    import json
+                    r.setex("weather:data", 900, json.dumps(weather_data))
+        except Exception as e:
+            print(f"Weather error: {e}")
+
     return render_template_string("""
         <!DOCTYPE html>
         <html>
@@ -69,10 +117,24 @@ def index():
                 }
                 .overlay-top-right {
                     position: absolute; top: 30px; right: 40px; z-index: 3;
+                    display: flex; flex-direction: column; align-items: flex-end;
+                }
+                .clock {
                     font-size: 3em; font-weight: 300;
                     text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
                     font-family: monospace;
                 }
+                .weather-container {
+                    margin-top: 10px;
+                    display: flex;
+                    flex-direction: column;
+                    align-items: flex-end;
+                    text-shadow: 1px 1px 3px rgba(0,0,0,0.8);
+                    font-size: 1.2em;
+                }
+                .weather-row { display: flex; gap: 10px; align-items: center; }
+                .weather-label { font-size: 0.7em; opacity: 0.8; margin-right: 5px; }
+                
                 .overlay-bottom-left {
                     position: absolute; bottom: 40px; left: 40px; z-index: 3;
                     text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
@@ -128,7 +190,20 @@ def index():
                 <div class="background"></div>
                 <img src="/image{{ data.path }}" class="photo">
                 
-                <div class="overlay-top-right" id="clock">--.--</div>
+                <div class="overlay-top-right">
+                    <div id="clock" class="clock">--:--</div>
+                    {% if weather %}
+                    <div class="weather-container">
+                        <div class="weather-row">
+                            <span>{{ weather.current.icon }} {{ weather.current.temp }}°C</span>
+                        </div>
+                        <div class="weather-row" style="font-size: 0.8em; opacity: 0.9;">
+                            <span class="weather-label">Tom:</span>
+                            <span>{{ weather.tomorrow.icon }} {{ weather.tomorrow.min }}° / {{ weather.tomorrow.max }}°</span>
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
                 
                 <div class="overlay-bottom-left">
                     <div class="meta-row">
@@ -150,7 +225,7 @@ def index():
             </div>
         </body>
         </html>
-    """, data=data, month=month_str, year=year_str, location=location_str, scanner_status=scanner_status)
+    """, data=data, month=month_str, year=year_str, location=location_str, scanner_status=scanner_status, weather=weather_data)
 
 @app.route('/image/<path:filepath>')
 def image_proxy(filepath):
