@@ -4,9 +4,9 @@ tasks:
   release:
     desc: "Create a new release tag and push it (usage: task release v1.0.0)"
     vars:
-      VERSION: '{{.CLI_ARGS}}'
+      TAG: '{{.VERSION | default .CLI_ARGS}}'
     cmds:
-      - 'test -n "{{.VERSION}}" || (echo "Error: Version argument required (e.g. task release v1.0.0)" && exit 1)'
-      - 'git tag -a {{.VERSION}} -m "Release {{.VERSION}}"'
-      - 'git push origin {{.VERSION}}'
+      - 'test -n "{{.TAG}}" || (echo "Error: Version argument required (e.g. task release v1.0.0)" && exit 1)'
+      - 'git tag -a {{.TAG}} -m "Release {{.TAG}}"'
+      - 'git push origin {{.TAG}}'
     silent: true
