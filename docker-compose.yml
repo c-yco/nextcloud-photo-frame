@@ -3,7 +3,7 @@ services:
     image: ghcr.io/c-yco/nextcloud-photo-frame-app:main
     build: .
     ports:
-      - "80:5000"
+      - "7880:7880"
     environment:
       - REDIS_HOST=redis
       - NC_URL=${NC_URL}
