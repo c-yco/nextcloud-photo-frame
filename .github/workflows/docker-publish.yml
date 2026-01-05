@@ -20,7 +20,11 @@ jobs:
 
     strategy:
       matrix:
-        service: [app, worker]
+        include:
+          - service: app
+            dockerfile: Dockerfile
+          - service: worker
+            dockerfile: Dockerfile.worker
 
     steps:
       - name: Checkout repository
@@ -48,6 +52,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
+          file: ${{ matrix.dockerfile }}
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
