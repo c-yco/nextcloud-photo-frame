@@ -25,9 +25,18 @@ A Dockerized application that displays random photos from a Nextcloud instance w
     *   **WEATHER_LAT** / **WEATHER_LON**: (Optional) Coordinates for weather display.
     *   **APP_LANG**: Language code (en, de, fr, es). Default: en.
 
-3.  Build and run with Docker Compose:
+3.  Run with Docker Compose:
     ```bash
-    docker-compose up --build
+    # Pull the latest images from GitHub Container Registry
+    docker-compose pull
+
+    # Start the stack
+    docker-compose up -d
+    ```
+
+    *Alternatively, to build locally:*
+    ```bash
+    docker-compose up -d --build
     ```
 
 3.  Access the app at `http://localhost`.
