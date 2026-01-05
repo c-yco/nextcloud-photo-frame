@@ -11,15 +11,18 @@ A Dockerized application that displays random photos from a Nextcloud instance w
 
 ## Setup
 
-1.  Create a `.env` file with your Nextcloud credentials:
-    ```env
-    NC_URL=https://your-nextcloud-instance.com/remote.php/dav/files/your-username
-    NC_USER=your-username
-    NC_PASS=your-app-password
-    NC_PHOTO_PATH=/Photos/
+1.  Copy the example environment file:
+    ```bash
+    cp example.env .env
     ```
 
-2.  Build and run with Docker Compose:
+2.  Edit `.env` with your Nextcloud credentials.
+    *   **NC_URL**: Your Nextcloud WebDAV URL (e.g., `https://cloud.example.com/remote.php/dav/files/your_username`).
+    *   **NC_USER**: Your Nextcloud username.
+    *   **NC_PASS**: An App Password (generated in Nextcloud Security settings).
+    *   **NC_PHOTO_PATH**: The folder to scan (e.g., `/Photos/`).
+
+3.  Build and run with Docker Compose:
     ```bash
     docker-compose up --build
     ```
