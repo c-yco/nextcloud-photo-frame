@@ -2,6 +2,8 @@ import os
 import redis
 import requests
 import io
+import base64
+import qrcode
 from PIL import Image, ImageOps
 from flask import Flask, render_template_string, Response, stream_with_context
 from datetime import datetime
@@ -127,6 +129,42 @@ def index():
         except Exception as e:
             print(f"Weather error: {e}")
 
+    # QR Code Logic
+    qr_code_b64 = None
+    nextcloud_link = "#"
+    if os.getenv('SHOW_QR_CODE', 'false').lower() == 'true':
+        try:
+            nc_url = os.getenv('NC_URL', '')
+            # Try to determine base URL
+            base_url = nc_url
+            if '/remote.php' in nc_url:
+                base_url = nc_url.split('/remote.php')[0]
+            
+            # Extract folder and filename
+            # data['path'] is usually something like /Photos/Album/img.jpg in WebDAV
+            file_path = data.get('path', '')
+            if file_path:
+                directory = os.path.dirname(file_path)
+                filename = os.path.basename(file_path)
+                
+                # Construct UI Link (approximate for Files app)
+                # https://cloud.com/apps/files/?dir=/Photos/Album&scrollto=img.jpg
+                from urllib.parse import quote
+                nextcloud_link = f"{base_url}/apps/files/?dir={quote(directory)}&openfile=true&scrollto={quote(filename)}"
+                
+                # Generate QR
+                qr = qrcode.QRCode(box_size=3, border=1)
+                qr.add_data(nextcloud_link)
+                qr.make(fit=True)
+                
+                img_io = io.BytesIO()
+                qr_img = qr.make_image(fill_color="white", back_color="transparent")
+                qr_img.save(img_io, format="PNG")
+                img_io.seek(0)
+                qr_code_b64 = base64.b64encode(img_io.getvalue()).decode()
+        except Exception as e:
+             print(f"QR Gen Error: {e}")
+
     total_photos = r.zcard("photo_pool") or 0
     last_scan_time = r.get("stats:last_scan_time")
     last_scan_str = ""
@@ -214,6 +252,13 @@ def index():
                     border-radius: 50%;
                     animation: pulse 1.5s infinite;
                 }
+                .qr-container {
+                    position: absolute; bottom: 120px; right: 40px; z-index: 3;
+                    opacity: 0.7; transition: opacity 0.3s;
+                }
+                .qr-container:hover { opacity: 1; }
+                .qr-img { border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
+                
                 @keyframes pulse {
                     0% { opacity: 1; transform: scale(1); }
                     50% { opacity: 0.5; transform: scale(0.8); }
@@ -264,6 +309,14 @@ def index():
                     </div>
                 </div>
 
+                {% if qr_code %}
+                <div class="qr-container">
+                    <a href="{{ nc_link }}" target="_blank">
+                        <img src="data:image/png;base64,{{ qr_code }}" class="qr-img">
+                    </a>
+                </div>
+                {% endif %}
+
                 <div class="badges-container">
                     <div class="status-badge">
                         <span>{{ total_photos }} {{ t.photos }}</span>
@@ -283,7 +336,7 @@ def index():
             </div>
         </body>
         </html>
-    """, data=data, month=month_str, year=year_str, location=location_str, scanner_status=scanner_status, weather=weather_data, total_photos=total_photos, last_scan_str=last_scan_str, t=t)
+    """, data=data, month=month_str, year=year_str, location=location_str, scanner_status=scanner_status, weather=weather_data, total_photos=total_photos, last_scan_str=last_scan_str, t=t, qr_code=qr_code_b64, nc_link=nextcloud_link)
 
 @app.route('/image/<path:filepath>')
 def image_proxy(filepath):

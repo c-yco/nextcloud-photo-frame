@@ -5,3 +5,4 @@ redis
 requests
 croniter
 gunicorn
+qrcode[pil]
