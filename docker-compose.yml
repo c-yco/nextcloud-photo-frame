@@ -1,0 +1,37 @@
+services:
+  app:
+    build: .
+    expose:
+      - "5000"
+    environment:
+      - REDIS_HOST=redis
+      - NC_URL=${NC_URL}
+      - NC_USER=${NC_USER}
+      - NC_PASS=${NC_PASS}
+    depends_on:
+      - redis
+
+  worker:
+    build: .
+    command: python scanner.py
+    environment:
+      - REDIS_HOST=redis
+      - NC_URL=${NC_URL}
+      - NC_USER=${NC_USER}
+      - NC_PASS=${NC_PASS}
+      - NC_PHOTO_PATH=${NC_PHOTO_PATH:-/Photos/}
+    depends_on:
+      - redis
+
+  redis:
+    image: redis:alpine
+    restart: always
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf
+    depends_on:
+      - app

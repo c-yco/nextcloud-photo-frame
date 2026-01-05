@@ -1,0 +1,201 @@
+import os
+import redis
+import requests
+import io
+from PIL import Image, ImageOps
+from flask import Flask, render_template_string, Response, stream_with_context
+from datetime import datetime
+
+app = Flask(__name__)
+r = redis.Redis(host=os.getenv('REDIS_HOST'), port=6379, decode_responses=True)
+
+@app.route('/')
+def index():
+    # Pick random photo based on weight from Redis
+    photo_key = r.zrandmember("photo_pool")
+    if not photo_key:
+        return "No photos found in pool. Please wait for the scanner to populate the database."
+        
+    data = r.hgetall(photo_key)
+    
+    # Parse Date
+    date_obj = None
+    if data.get('timestamp') and data['timestamp'] != 'Unknown':
+        try:
+            date_obj = datetime.strptime(data['timestamp'], "%Y:%m:%d %H:%M:%S")
+        except ValueError:
+            pass
+            
+    month_str = date_obj.strftime("%b") if date_obj else ""
+    year_str = date_obj.strftime("%Y") if date_obj else ""
+    
+    # Parse Location (Folder name as proxy)
+    location_str = ""
+    try:
+        folder_name = os.path.basename(os.path.dirname(data['path']))
+        # Optional: Clean up date prefix from folder name if present (e.g. "2009-05-24 Berliner Zoo" -> "Berliner Zoo")
+        parts = folder_name.split(' ', 1)
+        if len(parts) > 1 and any(char.isdigit() for char in parts[0]):
+             location_str = parts[1]
+        else:
+             location_str = folder_name
+    except:
+        location_str = "Unknown Location"
+
+    scanner_status = r.get("scanner:status") or "idle"
+
+    return render_template_string("""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <style>
+                body, html { margin: 0; padding: 0; height: 100%; overflow: hidden; background: #000; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color: white; }
+                .container { position: relative; width: 100%; height: 100%; display: flex; justify-content: center; align-items: center; }
+                .background {
+                    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+                    background-image: url('/image{{ data.path }}');
+                    background-size: cover;
+                    background-position: center;
+                    filter: blur(25px) brightness(0.5);
+                    z-index: 1;
+                    transform: scale(1.1); /* Prevent blur edges */
+                }
+                .photo {
+                    position: relative;
+                    max-width: 95%;
+                    max-height: 95%;
+                    z-index: 2;
+                    box-shadow: 0 0 30px rgba(0,0,0,0.7);
+                }
+                .overlay-top-right {
+                    position: absolute; top: 30px; right: 40px; z-index: 3;
+                    font-size: 3em; font-weight: 300;
+                    text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+                    font-family: monospace;
+                }
+                .overlay-bottom-left {
+                    position: absolute; bottom: 40px; left: 40px; z-index: 3;
+                    text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+                    display: flex; flex-direction: column;
+                    align-items: flex-start;
+                }
+                .meta-row { display: flex; align-items: baseline; }
+                .camera-icon { font-size: 1.2em; margin-right: 8px; }
+                .month { font-size: 1.5em; font-weight: 600; text-transform: uppercase; margin-right: 10px; }
+                .year-row { display: flex; align-items: baseline; margin-top: -10px; }
+                .year { font-size: 5em; font-weight: 700; line-height: 1; letter-spacing: -2px; }
+                .location { font-size: 2.5em; font-family: 'Georgia', serif; margin-left: 20px; font-weight: 400; }
+                .status-badge {
+                    position: absolute; bottom: 40px; right: 40px; z-index: 3;
+                    background-color: rgba(0, 0, 0, 0.6);
+                    padding: 8px 12px;
+                    border-radius: 20px;
+                    font-size: 0.9em;
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                    backdrop-filter: blur(5px);
+                    border: 1px solid rgba(255,255,255,0.1);
+                }
+                .status-dot {
+                    width: 8px;
+                    height: 8px;
+                    background-color: #4CAF50;
+                    border-radius: 50%;
+                    animation: pulse 1.5s infinite;
+                }
+                @keyframes pulse {
+                    0% { opacity: 1; transform: scale(1); }
+                    50% { opacity: 0.5; transform: scale(0.8); }
+                    100% { opacity: 1; transform: scale(1); }
+                }
+            </style>
+            <script>
+                function updateTime() {
+                    const now = new Date();
+                    const hours = String(now.getHours()).padStart(2, '0');
+                    const minutes = String(now.getMinutes()).padStart(2, '0');
+                    document.getElementById('clock').textContent = hours + ':' + minutes;
+                }
+                setInterval(updateTime, 1000);
+                
+                // Reload page every 30 seconds for new photo
+                setTimeout(function(){ window.location.reload(); }, 30000);
+            </script>
+        </head>
+        <body onload="updateTime()">
+            <div class="container">
+                <div class="background"></div>
+                <img src="/image{{ data.path }}" class="photo">
+                
+                <div class="overlay-top-right" id="clock">--.--</div>
+                
+                <div class="overlay-bottom-left">
+                    <div class="meta-row">
+                        <span class="camera-icon">📷</span>
+                        <span class="month">{{ month }}</span>
+                    </div>
+                    <div class="year-row">
+                        <span class="year">{{ year }}</span>
+                        <span class="location">{{ location }}</span>
+                    </div>
+                </div>
+
+                {% if scanner_status == 'running' %}
+                <div class="status-badge">
+                    <div class="status-dot"></div>
+                    <span>Indexing...</span>
+                </div>
+                {% endif %}
+            </div>
+        </body>
+        </html>
+    """, data=data, month=month_str, year=year_str, location=location_str, scanner_status=scanner_status)
+
+@app.route('/image/<path:filepath>')
+def image_proxy(filepath):
+    # Ensure filepath starts with / if it's missing
+    if not filepath.startswith('/'):
+        filepath = '/' + filepath
+        
+    full_url = f"{os.getenv('NC_URL')}{filepath}"
+    
+    try:
+        # Fetch image from Nextcloud
+        req = requests.get(full_url, auth=(os.getenv('NC_USER'), os.getenv('NC_PASS')))
+        req.raise_for_status()
+        
+        # Open image and apply EXIF rotation
+        image = Image.open(io.BytesIO(req.content))
+        image = ImageOps.exif_transpose(image)
+        
+        # Save to buffer
+        img_io = io.BytesIO()
+        # Convert to RGB if necessary (e.g. for PNG with transparency saving as JPEG, though we prefer keeping format)
+        # For simplicity and compatibility, we can convert to JPEG or keep original format if supported.
+        # Let's try to preserve format, defaulting to JPEG if unknown.
+        fmt = image.format or 'JPEG'
+        image.save(img_io, format=fmt)
+        img_io.seek(0)
+        
+        return Response(img_io, content_type=f'image/{fmt.lower()}')
+    except Exception as e:
+        return f"Error fetching image: {e}", 500
+
+@app.route('/info')
+def info():
+    total_photos = r.zcard("photo_pool")
+    last_scan_found = r.get("stats:last_scan_found") or 0
+    last_scan_processed = r.get("stats:last_scan_processed") or 0
+    scanned_paths = r.smembers("stats:scanned_paths")
+    
+    return {
+        "total_photos_in_db": int(total_photos),
+        "last_scan_found": int(last_scan_found),
+        "last_scan_processed": int(last_scan_processed),
+        "scanned_paths": list(scanned_paths)
+    }
+
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000)
