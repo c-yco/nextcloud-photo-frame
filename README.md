@@ -21,7 +21,9 @@ A Dockerized application that displays random photos from a Nextcloud instance w
     *   **NC_USER**: Your Nextcloud username.
     *   **NC_PASS**: An App Password (generated in Nextcloud Security settings).
     *   **NC_PHOTO_PATH**: The folder to scan (e.g., `/Photos/`).
+    *   **SCAN_CRON**: Scan schedule in cron syntax (default: `0 1 * * *` = daily at 1 AM).
     *   **WEATHER_LAT** / **WEATHER_LON**: (Optional) Coordinates for weather display.
+    *   **APP_LANG**: Language code (en, de, fr, es). Default: en.
 
 3.  Build and run with Docker Compose:
     ```bash
@@ -37,6 +39,17 @@ A Dockerized application that displays random photos from a Nextcloud instance w
 - **Image Proxy**: Serves images securely from Nextcloud through the app.
 - **Weather Display**: Shows current and tomorrow's weather (requires lat/lon config). Get LAT & LON values from https://www.latlong.net/ for example
 
+## Persistence
+
+The application uses a Docker volume (`redis_data`) to persist the photo index and cache. This means:
+- The photo index survives container restarts.
+- You don't need to re-scan your entire library every time you restart the app.
+
+To clear the index and start fresh:
+```bash
+docker-compose down -v
+docker-compose up --build
+```
 
 ## AI Disclaimer
 

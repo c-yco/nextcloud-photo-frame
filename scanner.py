@@ -7,6 +7,7 @@ import sys
 from webdav3.client import Client
 from PIL import Image, ExifTags
 from datetime import datetime, timedelta
+from croniter import croniter
 
 # Configure logging
 logging.basicConfig(
@@ -153,10 +154,32 @@ def run_scan():
     scan_recursive(photo_path)
 
 if __name__ == "__main__":
+    cron_schedule = os.getenv('SCAN_CRON', '0 1 * * *') # Default daily at 1 AM
+    logger.info(f"Scanner started. Schedule: {cron_schedule}")
+
+    # Run immediately on startup
+    logger.info("Starting initial scan...")
+    r.set("scanner:status", "running")
+    run_scan()
+    r.set("scanner:status", "idle")
+    r.set("stats:last_scan_time", datetime.now().isoformat())
+
     while True:
-        logger.info("Starting scan...")
-        r.set("scanner:status", "running")
-        run_scan()
-        r.set("scanner:status", "idle")
-        logger.info("Scan complete. Sleeping...")
-        time.sleep(3600)
+        try:
+            now = datetime.now()
+            iter = croniter(cron_schedule, now)
+            next_run = iter.get_next(datetime)
+            delay = (next_run - now).total_seconds()
+            
+            logger.info(f"Next scan scheduled for {next_run} (in {int(delay)} seconds)")
+            if delay > 0:
+                time.sleep(delay)
+            
+            logger.info("Starting scheduled scan...")
+            r.set("scanner:status", "running")
+            run_scan()
+            r.set("scanner:status", "idle")
+            r.set("stats:last_scan_time", datetime.now().isoformat())
+        except Exception as e:
+            logger.error(f"Error in scheduler loop: {e}")
+            time.sleep(60) # Retry after 1 min on error

@@ -9,8 +9,43 @@ from datetime import datetime
 app = Flask(__name__)
 r = redis.Redis(host=os.getenv('REDIS_HOST'), port=6379, decode_responses=True)
 
+# Translations
+TRANSLATIONS = {
+    'en': {
+        'tom': 'Tom:',
+        'indexing': 'Indexing...',
+        'photos': 'Photos',
+        'index': 'Index:',
+        'months': ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+    },
+    'de': {
+        'tom': 'Morgen:',
+        'indexing': 'Indiziere...',
+        'photos': 'Fotos',
+        'index': 'Index:',
+        'months': ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember']
+    },
+    'fr': {
+        'tom': 'Demain:',
+        'indexing': 'Indexation...',
+        'photos': 'Photos',
+        'index': 'Index:',
+        'months': ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre']
+    },
+    'es': {
+        'tom': 'Mañana:',
+        'indexing': 'Indexando...',
+        'photos': 'Fotos',
+        'index': 'Índice:',
+        'months': ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
+    }
+}
+
 @app.route('/')
 def index():
+    lang = os.getenv('APP_LANG', 'en')
+    t = TRANSLATIONS.get(lang, TRANSLATIONS['en'])
+
     # Pick random photo based on weight from Redis
     photo_key = r.zrandmember("photo_pool")
     if not photo_key:
@@ -26,7 +61,7 @@ def index():
         except ValueError:
             pass
             
-    month_str = date_obj.strftime("%b") if date_obj else ""
+    month_str = t['months'][date_obj.month - 1] if date_obj else ""
     year_str = date_obj.strftime("%Y") if date_obj else ""
     
     # Parse Location (Folder name as proxy)
@@ -92,6 +127,16 @@ def index():
         except Exception as e:
             print(f"Weather error: {e}")
 
+    total_photos = r.zcard("photo_pool") or 0
+    last_scan_time = r.get("stats:last_scan_time")
+    last_scan_str = ""
+    if last_scan_time:
+        try:
+            dt = datetime.fromisoformat(last_scan_time)
+            last_scan_str = dt.strftime("%d.%m %H:%M")
+        except:
+            pass
+
     return render_template_string("""
         <!DOCTYPE html>
         <html>
@@ -130,7 +175,7 @@ def index():
                     flex-direction: column;
                     align-items: flex-end;
                     text-shadow: 1px 1px 3px rgba(0,0,0,0.8);
-                    font-size: 1.2em;
+                    font-size: 2.5em;
                 }
                 .weather-row { display: flex; gap: 10px; align-items: center; }
                 .weather-label { font-size: 0.7em; opacity: 0.8; margin-right: 5px; }
@@ -147,8 +192,11 @@ def index():
                 .year-row { display: flex; align-items: baseline; margin-top: -10px; }
                 .year { font-size: 5em; font-weight: 700; line-height: 1; letter-spacing: -2px; }
                 .location { font-size: 2.5em; font-family: 'Georgia', serif; margin-left: 20px; font-weight: 400; }
-                .status-badge {
+                .badges-container {
                     position: absolute; bottom: 40px; right: 40px; z-index: 3;
+                    display: flex; flex-direction: column; align-items: flex-end; gap: 10px;
+                }
+                .status-badge {
                     background-color: rgba(0, 0, 0, 0.6);
                     padding: 8px 12px;
                     border-radius: 20px;
@@ -198,7 +246,7 @@ def index():
                             <span>{{ weather.current.icon }} {{ weather.current.temp }}°C</span>
                         </div>
                         <div class="weather-row" style="font-size: 0.8em; opacity: 0.9;">
-                            <span class="weather-label">Tom:</span>
+                            <span class="weather-label">{{ t.tom }}</span>
                             <span>{{ weather.tomorrow.icon }} {{ weather.tomorrow.min }}° / {{ weather.tomorrow.max }}°</span>
                         </div>
                     </div>
@@ -216,16 +264,26 @@ def index():
                     </div>
                 </div>
 
-                {% if scanner_status == 'running' %}
-                <div class="status-badge">
-                    <div class="status-dot"></div>
-                    <span>Indexing...</span>
+                <div class="badges-container">
+                    <div class="status-badge">
+                        <span>{{ total_photos }} {{ t.photos }}</span>
+                    </div>
+                    
+                    {% if scanner_status == 'running' %}
+                    <div class="status-badge">
+                        <div class="status-dot"></div>
+                        <span>{{ t.indexing }}</span>
+                    </div>
+                    {% elif last_scan_str %}
+                    <div class="status-badge" style="opacity: 0.7;">
+                        <span>{{ t.index }} {{ last_scan_str }}</span>
+                    </div>
+                    {% endif %}
                 </div>
-                {% endif %}
             </div>
         </body>
         </html>
-    """, data=data, month=month_str, year=year_str, location=location_str, scanner_status=scanner_status, weather=weather_data)
+    """, data=data, month=month_str, year=year_str, location=location_str, scanner_status=scanner_status, weather=weather_data, total_photos=total_photos, last_scan_str=last_scan_str, t=t)
 
 @app.route('/image/<path:filepath>')
 def image_proxy(filepath):
