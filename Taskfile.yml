@@ -2,7 +2,7 @@ version: '3'
 
 tasks:
   release:
-    desc: "Create a new release tag and push it (usage: task release v1.0.0)"
+    desc: "Create a new release tag and push it (usage: task release -- v1.0.0)"
     vars:
       TAG: '{{.VERSION | default .CLI_ARGS}}'
     cmds:
