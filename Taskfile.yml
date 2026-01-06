@@ -3,9 +3,12 @@ version: '3'
 tasks:
   up:
     desc: Rebuild and run the project locally
+    vars:
+      GIT_VERSION:
+        sh: git describe --tags --always --dirty || echo "unknown"
     cmds:
-      - docker compose up --build -d
-      - echo "App is running at http://localhost:7880"
+      - APP_VERSION={{.GIT_VERSION}} docker compose up --build -d
+      - echo "App ({{.GIT_VERSION}}) is running at http://localhost:7880"
 
   down:
     desc: Stop the local project

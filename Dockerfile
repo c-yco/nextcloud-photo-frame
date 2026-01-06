@@ -2,6 +2,9 @@ FROM python:3.11-slim
 
 ENV PYTHONUNBUFFERED=1
 
+ARG APP_VERSION=unknown
+ENV APP_VERSION=$APP_VERSION
+
 WORKDIR /app
 
 COPY requirements.txt .

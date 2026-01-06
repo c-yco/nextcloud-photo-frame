@@ -1,7 +1,10 @@
 services:
   app:
     image: ghcr.io/c-yco/nextcloud-photo-frame-app:main
-    build: .
+    build:
+      context: .
+      args:
+        - APP_VERSION=${APP_VERSION:-unknown}
     ports:
       - "7880:7880"
     env_file: .env
@@ -15,6 +18,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.worker
+      args:
+        - APP_VERSION=${APP_VERSION:-unknown}
     env_file: .env
     environment:
       - REDIS_HOST=redis
