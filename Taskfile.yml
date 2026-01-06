@@ -5,6 +5,7 @@ tasks:
     desc: Rebuild and run the project locally
     cmds:
       - docker compose up --build -d
+      - echo "App is running at http://localhost:7880"
 
   down:
     desc: Stop the local project
