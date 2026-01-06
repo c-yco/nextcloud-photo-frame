@@ -217,6 +217,12 @@ def index():
                     text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
                     font-family: monospace;
                 }
+                .version-badge {
+                    position: absolute; top: 10px; left: 10px; z-index: 3;
+                    opacity: 0.3; font-size: 0.7em; font-family: monospace;
+                    transition: opacity 0.3s;
+                }
+                .version-badge:hover { opacity: 0.8; }
                 .weather-container {
                     margin-top: 10px;
                     display: flex;
@@ -337,6 +343,7 @@ def index():
         </head>
         <body onload="updateTime()">
             <div class="container">
+                <div class="version-badge">{{ version }}</div>
                 <div class="background"></div>
                 <img src="/image{{ data.path }}" class="photo">
                 
@@ -393,7 +400,7 @@ def index():
             </div>
         </body>
         </html>
-    """, data=data, month=month_str, year=year_str, location=location_str, scanner_status=scanner_status, weather=weather_data, total_photos=total_photos, last_scan_str=last_scan_str, t=t, qr_code=qr_code_b64, nc_link=nextcloud_link, reload_interval=int(os.getenv('APP_RELOAD_INTERVAL', '30')), quiet_time=os.getenv('APP_QUIET_TIME', ''))
+    """, data=data, month=month_str, year=year_str, location=location_str, scanner_status=scanner_status, weather=weather_data, total_photos=total_photos, last_scan_str=last_scan_str, t=t, qr_code=qr_code_b64, nc_link=nextcloud_link, reload_interval=int(os.getenv('APP_RELOAD_INTERVAL', '30')), quiet_time=os.getenv('APP_QUIET_TIME', ''), version=os.getenv('APP_VERSION', 'unknown'))
 
 @app.route('/image/<path:filepath>')
 def image_proxy(filepath):
