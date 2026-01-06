@@ -49,16 +49,25 @@ def get_exif_data(local_path):
         logger.error(f"Error reading EXIF: {e}")
         return "Unknown", "Unknown"
 
-def is_favorite(file_path):
-    # WebDAV PROPFIND for {http://owncloud.org/ns}favorite
-    data = '<?xml version="1.0"?><d:propfind xmlns:d="DAV:" xmlns:oc="http://owncloud.org/ns"><d:prop><oc:favorite/></d:prop></d:propfind>'
+def get_metadata(file_path):
+    # WebDAV PROPFIND for {http://owncloud.org/ns}favorite and {http://owncloud.org/ns}fileid
+    data = '<?xml version="1.0"?><d:propfind xmlns:d="DAV:" xmlns:oc="http://owncloud.org/ns"><d:prop><oc:favorite/><oc:fileid/></d:prop></d:propfind>'
     try:
         resp = requests.request("PROPFIND", os.getenv('NC_URL') + file_path, 
                                 auth=(os.getenv('NC_USER'), os.getenv('NC_PASS')), 
                                 data=data, headers={'Depth': '0'})
-        return "<oc:favorite>1</oc:favorite>" in resp.text
+        
+        is_fav = "<oc:favorite>1</oc:favorite>" in resp.text
+        
+        file_id = None
+        import re
+        match = re.search(r'<oc:fileid>(.*?)</oc:fileid>', resp.text)
+        if match:
+            file_id = match.group(1)
+            
+        return is_fav, file_id
     except:
-        return False
+        return False, None
 
 def process_file(file):
     r.incr("stats:last_scan_found")
@@ -99,7 +108,7 @@ def process_file(file):
         except Exception as e:
             logger.warning(f"Could not calculate age for {file}: {e}")
 
-    is_fav = is_favorite(file)
+    is_fav, file_id = get_metadata(file)
     if is_fav: weight *= 5
     
     # Ensure minimum weight of 1
@@ -110,7 +119,8 @@ def process_file(file):
         "path": file,
         "weight": weight,
         "timestamp": timestamp,
-        "gps": gps
+        "gps": gps,
+        "file_id": file_id or ""
     })
     r.zadd("photo_pool", {f"photo:{file}": weight})
     r.incr("stats:last_scan_processed")

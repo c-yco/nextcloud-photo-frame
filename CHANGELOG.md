@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.1.9] - 2026-01-06
+### Added
+- Optional QR code with deep link to Nextcloud Files app (enable with `SHOW_QR_CODE=true`).
+- Improved Nextcloud deep links using File IDs (requires a fresh scan to populate IDs).
+
 ## [v0.1.5] - 2026-01-05
 ### Fixed
 - Set `PYTHONUNBUFFERED=1` in Dockerfile to ensure worker logs are visible in stdout.

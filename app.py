@@ -147,10 +147,14 @@ def index():
                 directory = os.path.dirname(file_path)
                 filename = os.path.basename(file_path)
                 
-                # Construct UI Link (approximate for Files app)
-                # https://cloud.com/apps/files/?dir=/Photos/Album&scrollto=img.jpg
+                # Construct UI Link using File ID if available (Nextcloud 28+ style)
                 from urllib.parse import quote
-                nextcloud_link = f"{base_url}/apps/files/?dir={quote(directory)}&openfile=true&scrollto={quote(filename)}"
+                file_id = data.get('file_id')
+                if file_id:
+                    nextcloud_link = f"{base_url}/apps/files/files/{file_id}?dir={quote(directory)}&openfile=true&editing=false"
+                else:
+                    # Fallback for older scans without file_id
+                    nextcloud_link = f"{base_url}/apps/files/?dir={quote(directory)}&openfile=true&scrollto={quote(filename)}"
                 
                 # Generate QR
                 qr = qrcode.QRCode(box_size=3, border=1)
