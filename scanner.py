@@ -66,6 +66,8 @@ def get_metadata(file_path):
         match = re.search(r'<oc:fileid>(.*?)</oc:fileid>', resp.text)
         if match:
             file_id = match.group(1)
+        else:
+            logger.warning(f"Could not find fileid for {file_path}. Response snippet: {resp.text[:200]}")
             
         return is_fav, file_id
     except:
