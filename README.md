@@ -21,6 +21,7 @@ A Dockerized application that displays random photos from a Nextcloud instance w
     *   **NC_USER**: Your Nextcloud username.
     *   **NC_PASS**: An App Password (generated in Nextcloud Security settings).
     *   **NC_PHOTO_PATH**: The folder to scan (e.g., `/Photos/`).
+    *   **IGNORE_FILE**: (Optional) Filename that, if present in a directory, causes the scanner to skip that directory and its subdirectories (default: `.ignore`).
     *   **SCAN_CRON**: Scan schedule in cron syntax (default: `0 1 * * *` = daily at 1 AM).
     *   **WEATHER_LAT** / **WEATHER_LON**: (Optional) Coordinates for weather display.
     *   **APP_LANG**: Language code (en, de, fr, es). Default: en.

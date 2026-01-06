@@ -26,6 +26,8 @@ NC_OPTIONS = {
 client = Client(NC_OPTIONS)
 r = redis.Redis(host=os.getenv('REDIS_HOST'), port=6379, decode_responses=True)
 
+IGNORE_FILE = os.getenv('IGNORE_FILE', '.ignore')
+
 def get_exif_data(local_path):
     try:
         img = Image.open(local_path)
@@ -134,6 +136,17 @@ def scan_recursive(path):
         
         items = client.list(path)
         if not items: return
+
+        # Check if the directory contains the ignore file
+        for item in items[1:]:
+            full_path = item
+            if not item.startswith('/'):
+                 full_path = os.path.join(path, item)
+            
+            # Use basename to check for ignore file (handle both files and directories if accidentally named so)
+            if os.path.basename(full_path.rstrip('/')) == IGNORE_FILE:
+                logger.info(f"Directory {path} contains {IGNORE_FILE}, skipping.")
+                return
 
         # First item is the directory itself, skip it
         for item in items[1:]:

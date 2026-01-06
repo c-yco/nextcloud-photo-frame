@@ -29,6 +29,7 @@ services:
       - NC_USER=${NC_USER}
       - NC_PASS=${NC_PASS}
       - NC_PHOTO_PATH=${NC_PHOTO_PATH:-/Photos/}
+      - IGNORE_FILE=${IGNORE_FILE:-.ignore}
       - SCAN_CRON=${SCAN_CRON:-0 1 * * *}
 
     depends_on:
