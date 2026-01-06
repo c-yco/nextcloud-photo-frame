@@ -7,7 +7,7 @@ A Dockerized application that displays random photos from a Nextcloud instance w
 - **App**: Flask web interface to display photos.
 - **Worker**: Background process that scans Nextcloud via WebDAV, extracts EXIF data, and updates Redis.
 - **Redis**: Stores photo metadata and weights.
-- **Nginx**: Reverse proxy for the application.
+
 
 ## Setup
 
@@ -24,6 +24,7 @@ A Dockerized application that displays random photos from a Nextcloud instance w
     *   **SCAN_CRON**: Scan schedule in cron syntax (default: `0 1 * * *` = daily at 1 AM).
     *   **WEATHER_LAT** / **WEATHER_LON**: (Optional) Coordinates for weather display.
     *   **APP_LANG**: Language code (en, de, fr, es). Default: en.
+    *   **SHOW_QR_CODE**: (Optional) Show a QR code linking to the original photo on Nextcloud. Set to `true` to enable.
 
 3.  Run with Docker Compose:
     ```bash
