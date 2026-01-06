@@ -278,8 +278,55 @@ def index():
                 }
                 setInterval(updateTime, 1000);
                 
-                // Reload page every 30 seconds for new photo
-                setTimeout(function(){ window.location.reload(); }, 30000);
+                // Configurable reload logic
+                const reloadInterval = {{ reload_interval * 1000 }};
+                const quietTime = "{{ quiet_time }}";
+
+                function checkReload() {
+                    if (!quietTime) {
+                        window.location.reload();
+                        return;
+                    }
+
+                    const now = new Date();
+                    const currentTime = now.getHours() * 60 + now.getMinutes();
+                    
+                    const ranges = quietTime.split(',');
+                    let isQuiet = false;
+
+                    for (const range of ranges) {
+                        const parts = range.trim().split('-');
+                        if (parts.length !== 2) continue;
+
+                        const [startH, startM] = parts[0].split(':').map(Number);
+                        const [endH, endM] = parts[1].split(':').map(Number);
+                        
+                        const start = startH * 60 + startM;
+                        const end = endH * 60 + endM;
+
+                        if (start <= end) {
+                            if (currentTime >= start && currentTime < end) {
+                                isQuiet = true;
+                                break;
+                            }
+                        } else {
+                            // Overnight range (e.g. 22:00-06:00)
+                            if (currentTime >= start || currentTime < end) {
+                                isQuiet = true;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (!isQuiet) {
+                        window.location.reload();
+                    } else {
+                        // Check again after interval
+                        setTimeout(checkReload, reloadInterval);
+                    }
+                }
+
+                setTimeout(checkReload, reloadInterval);
             </script>
         </head>
         <body onload="updateTime()">
@@ -340,7 +387,7 @@ def index():
             </div>
         </body>
         </html>
-    """, data=data, month=month_str, year=year_str, location=location_str, scanner_status=scanner_status, weather=weather_data, total_photos=total_photos, last_scan_str=last_scan_str, t=t, qr_code=qr_code_b64, nc_link=nextcloud_link)
+    """, data=data, month=month_str, year=year_str, location=location_str, scanner_status=scanner_status, weather=weather_data, total_photos=total_photos, last_scan_str=last_scan_str, t=t, qr_code=qr_code_b64, nc_link=nextcloud_link, reload_interval=int(os.getenv('APP_RELOAD_INTERVAL', '30')), quiet_time=os.getenv('APP_QUIET_TIME', ''))
 
 @app.route('/image/<path:filepath>')
 def image_proxy(filepath):

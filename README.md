@@ -25,6 +25,8 @@ A Dockerized application that displays random photos from a Nextcloud instance w
     *   **WEATHER_LAT** / **WEATHER_LON**: (Optional) Coordinates for weather display.
     *   **APP_LANG**: Language code (en, de, fr, es). Default: en.
     *   **SHOW_QR_CODE**: (Optional) Show a QR code linking to the original photo on Nextcloud. Set to `true` to enable.
+    *   **APP_RELOAD_INTERVAL**: (Optional) Time in seconds between photo changes. Default: `30`.
+    *   **APP_QUIET_TIME**: (Optional) Quiet time ranges where photos won't change (e.g., `22:00-06:00`). Supports multiple ranges separated by commas (e.g., `12:00-13:00,22:00-06:00`).
 
 3.  Run with Docker Compose:
     ```bash

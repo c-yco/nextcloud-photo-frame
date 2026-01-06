@@ -13,6 +13,8 @@ services:
       - WEATHER_LON=${WEATHER_LON}
       - APP_LANG=${APP_LANG:-en}
       - SHOW_QR_CODE=${SHOW_QR_CODE:-false}
+      - APP_RELOAD_INTERVAL=${APP_RELOAD_INTERVAL:-30}
+      - APP_QUIET_TIME=${APP_QUIET_TIME:-}
     depends_on:
       - redis
 
