@@ -1,6 +1,16 @@
 version: '3'
 
 tasks:
+  dev:
+    desc: Rebuild and run the project locally
+    cmds:
+      - docker compose up --build
+
+  stop:
+    desc: Stop the local project
+    cmds:
+      - docker compose down
+
   release:
     desc: "Create a new release tag and push it (usage: task release -- v1.0.0)"
     vars:
