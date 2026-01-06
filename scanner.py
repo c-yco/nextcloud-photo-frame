@@ -55,7 +55,8 @@ def get_metadata(file_path):
     # WebDAV PROPFIND for {http://owncloud.org/ns}favorite and {http://owncloud.org/ns}fileid
     data = '<?xml version="1.0"?><d:propfind xmlns:d="DAV:" xmlns:oc="http://owncloud.org/ns"><d:prop><oc:favorite/><oc:fileid/></d:prop></d:propfind>'
     try:
-        resp = requests.request("PROPFIND", os.getenv('NC_URL') + file_path, 
+        url = os.getenv('NC_URL').rstrip('/') + '/' + file_path.lstrip('/')
+        resp = requests.request("PROPFIND", url, 
                                 auth=(os.getenv('NC_USER'), os.getenv('NC_PASS')), 
                                 data=data, headers={'Depth': '0'})
         
