@@ -12,6 +12,17 @@ tasks:
     cmds:
       - docker compose down
 
+  clean:
+    desc: Remove all containers, volumes (including Redis data), and local images
+    cmds:
+      - docker compose down -v --rmi local
+
+  flush:
+    desc: Flush only the Redis database (deletes all cached photo metadata)
+    cmds:
+      - docker exec -it $(docker ps -q -f name=redis) redis-cli FLUSHALL
+      - echo "Redis database flushed."
+
   release:
     desc: "Create a new release tag and push it (usage: task release -- v1.0.0)"
     vars:
