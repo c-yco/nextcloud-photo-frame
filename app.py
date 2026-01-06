@@ -1,4 +1,5 @@
 import os
+import sys
 import redis
 import requests
 import io
@@ -400,29 +401,29 @@ def image_proxy(filepath):
     if not filepath.startswith('/'):
         filepath = '/' + filepath
         
-    full_url = f"{os.getenv('NC_URL')}{filepath}"
+    nc_url = os.getenv('NC_URL', '').rstrip('/')
+    full_url = f"{nc_url}{filepath}"
     
     try:
         # Fetch image from Nextcloud
-        req = requests.get(full_url, auth=(os.getenv('NC_USER'), os.getenv('NC_PASS')))
-        req.raise_for_status()
+        resp = requests.get(full_url, auth=(os.getenv('NC_USER'), os.getenv('NC_PASS')), stream=True)
+        resp.raise_for_status()
         
-        # Open image and apply EXIF rotation
-        image = Image.open(io.BytesIO(req.content))
+        # Open image and apply EXIF rotation (requires loading into memory)
+        # Note: We must load the image to process EXIF/rotation
+        image = Image.open(io.BytesIO(resp.content))
         image = ImageOps.exif_transpose(image)
         
         # Save to buffer
         img_io = io.BytesIO()
-        # Convert to RGB if necessary (e.g. for PNG with transparency saving as JPEG, though we prefer keeping format)
-        # For simplicity and compatibility, we can convert to JPEG or keep original format if supported.
-        # Let's try to preserve format, defaulting to JPEG if unknown.
         fmt = image.format or 'JPEG'
-        image.save(img_io, format=fmt)
+        image.save(img_io, format=fmt, quality=85)
         img_io.seek(0)
         
         return Response(img_io, content_type=f'image/{fmt.lower()}')
     except Exception as e:
-        return f"Error fetching image: {e}", 500
+        print(f"Error fetching image {filepath}: {e}", file=sys.stderr)
+        return "Not Found", 404
 
 @app.route('/info')
 def info():
