@@ -4,18 +4,9 @@ services:
     build: .
     ports:
       - "7880:7880"
+    env_file: .env
     environment:
       - REDIS_HOST=redis
-      - NC_URL=${NC_URL}
-      - NC_USER=${NC_USER}
-      - NC_PASS=${NC_PASS}
-      - WEATHER_LAT=${WEATHER_LAT}
-      - WEATHER_LON=${WEATHER_LON}
-      - APP_LANG=${APP_LANG:-en}
-      - SHOW_QR_CODE=${SHOW_QR_CODE:-false}
-      - APP_RELOAD_INTERVAL=${APP_RELOAD_INTERVAL:-30}
-      - APP_QUIET_TIME=${APP_QUIET_TIME:-}
-      - APP_VERSION=${APP_VERSION:-unknown}
     depends_on:
       - redis
 
@@ -24,16 +15,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.worker
+    env_file: .env
     environment:
       - REDIS_HOST=redis
-      - NC_URL=${NC_URL}
-      - NC_USER=${NC_USER}
-      - NC_PASS=${NC_PASS}
-      - NC_PHOTO_PATH=${NC_PHOTO_PATH:-/Photos/}
-      - IGNORE_FILE=${IGNORE_FILE:-.ignore}
-      - SCANNER_PARALLEL=${SCANNER_PARALLEL:-4}
-      - SCAN_CRON=${SCAN_CRON:-0 1 * * *}
-
     depends_on:
       - redis
 
