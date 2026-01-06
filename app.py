@@ -134,7 +134,7 @@ def index():
     nextcloud_link = "#"
     if os.getenv('SHOW_QR_CODE', 'false').lower() == 'true':
         try:
-            nc_url = os.getenv('NC_URL', '')
+            nc_url = os.getenv('NC_URL', '').rstrip('/')
             # Try to determine base URL
             base_url = nc_url
             if '/remote.php' in nc_url:
@@ -147,17 +147,19 @@ def index():
                 directory = os.path.dirname(file_path)
                 filename = os.path.basename(file_path)
                 
-                # Construct UI Link using File ID if available (Nextcloud 28+ style)
+                # Construct UI Link using File ID if available
                 from urllib.parse import quote
                 file_id = data.get('file_id')
                 if file_id:
-                    # Nextcloud "select" URL is very reliable for opening a specific file by ID
-                    nextcloud_link = f"{base_url}/index.php/apps/files/select/{file_id}"
+                    # Nextcloud /f/ID is the most robust internal redirect link
+                    nextcloud_link = f"{base_url}/index.php/f/{file_id}"
                 else:
                     # Fallback for older scans without file_id
                     nextcloud_link = f"{base_url}/index.php/apps/files/?dir={quote(directory)}&scrollto={quote(filename)}"
                 
-                print(f"DEBUG: Nextcloud Link Generated: {nextcloud_link}")
+                import sys
+                print(f"DEBUG: Nextcloud Link Generated: {nextcloud_link}", file=sys.stderr)
+                sys.stderr.flush()
                 
                 # Generate QR
                 qr = qrcode.QRCode(box_size=3, border=1)
