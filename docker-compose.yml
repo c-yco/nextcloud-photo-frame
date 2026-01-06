@@ -12,6 +12,7 @@ services:
       - WEATHER_LAT=${WEATHER_LAT}
       - WEATHER_LON=${WEATHER_LON}
       - APP_LANG=${APP_LANG:-en}
+      - SHOW_QR_CODE=${SHOW_QR_CODE:-false}
     depends_on:
       - redis
 
