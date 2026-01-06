@@ -151,11 +151,13 @@ def index():
                 from urllib.parse import quote
                 file_id = data.get('file_id')
                 if file_id:
-                    # Robust link format for Nextcloud (works with/without pretty URLs)
-                    nextcloud_link = f"{base_url}/index.php/apps/files/?dir={quote(directory)}&openfile={file_id}"
+                    # Nextcloud "select" URL is very reliable for opening a specific file by ID
+                    nextcloud_link = f"{base_url}/index.php/apps/files/select/{file_id}"
                 else:
                     # Fallback for older scans without file_id
                     nextcloud_link = f"{base_url}/index.php/apps/files/?dir={quote(directory)}&scrollto={quote(filename)}"
+                
+                print(f"DEBUG: Nextcloud Link Generated: {nextcloud_link}")
                 
                 # Generate QR
                 qr = qrcode.QRCode(box_size=3, border=1)
