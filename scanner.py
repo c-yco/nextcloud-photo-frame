@@ -4,10 +4,13 @@ import redis
 import requests
 import logging
 import sys
+import io
+import re
 from webdav3.client import Client
 from PIL import Image, ExifTags
 from datetime import datetime, timedelta
 from croniter import croniter
+from concurrent.futures import ThreadPoolExecutor
 
 # Configure logging
 logging.basicConfig(
@@ -18,19 +21,28 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Config
+NC_URL = os.getenv('NC_URL').rstrip('/')
+NC_USER = os.getenv('NC_USER')
+NC_PASS = os.getenv('NC_PASS')
+
 NC_OPTIONS = {
-    'webdav_hostname': os.getenv('NC_URL'),
-    'webdav_login':    os.getenv('NC_USER'),
-    'webdav_password': os.getenv('NC_PASS')
+    'webdav_hostname': NC_URL,
+    'webdav_login':    NC_USER,
+    'webdav_password': NC_PASS
 }
 client = Client(NC_OPTIONS)
 r = redis.Redis(host=os.getenv('REDIS_HOST'), port=6379, decode_responses=True)
 
-IGNORE_FILE = os.getenv('IGNORE_FILE', '.ignore')
+# Shared session for efficiency
+session = requests.Session()
+session.auth = (NC_USER, NC_PASS)
 
-def get_exif_data(local_path):
+IGNORE_FILE = os.getenv('IGNORE_FILE', '.ignore')
+MAX_WORKERS = int(os.getenv('SCANNER_PARALLEL', '4'))
+
+def get_exif_data_from_bytes(data):
     try:
-        img = Image.open(local_path)
+        img = Image.open(io.BytesIO(data))
         if not img._getexif():
             return "Unknown", "Unknown"
             
@@ -43,141 +55,162 @@ def get_exif_data(local_path):
         gps_info = exif.get('GPSInfo')
         gps_coords = "Unknown"
         if gps_info:
-            # Placeholder for full GPS conversion logic
             gps_coords = "Present" 
             
         return date_taken, gps_coords
     except Exception as e:
-        logger.error(f"Error reading EXIF: {e}")
         return "Unknown", "Unknown"
 
 def get_metadata(file_path):
-    # WebDAV PROPFIND for {http://owncloud.org/ns}favorite and {http://owncloud.org/ns}fileid
-    data = '<?xml version="1.0"?><d:propfind xmlns:d="DAV:" xmlns:oc="http://owncloud.org/ns"><d:prop><oc:favorite/><oc:fileid/></d:prop></d:propfind>'
+    # WebDAV PROPFIND for favorite, fileid, getetag, and getcontentlength
+    xml_data = '<?xml version="1.0"?><d:propfind xmlns:d="DAV:" xmlns:oc="http://owncloud.org/ns"><d:prop><oc:favorite/><oc:fileid/><d:getetag/><d:getcontentlength/></d:prop></d:propfind>'
     try:
-        url = os.getenv('NC_URL').rstrip('/') + '/' + file_path.lstrip('/')
-        resp = requests.request("PROPFIND", url, 
-                                auth=(os.getenv('NC_USER'), os.getenv('NC_PASS')), 
-                                data=data, headers={'Depth': '0'})
+        url = NC_URL + '/' + file_path.lstrip('/')
+        resp = session.request("PROPFIND", url, data=xml_data, headers={'Depth': '0'})
+        resp.raise_for_status()
         
         is_fav = "<oc:favorite>1</oc:favorite>" in resp.text
         
         file_id = None
-        import re
-        match = re.search(r'<oc:fileid>(.*?)</oc:fileid>', resp.text)
-        if match:
-            file_id = match.group(1)
-        else:
-            logger.warning(f"Could not find fileid for {file_path}. Response snippet: {resp.text[:200]}")
+        match_id = re.search(r'<oc:fileid>(.*?)</oc:fileid>', resp.text)
+        if match_id:
+            file_id = match_id.group(1)
             
-        return is_fav, file_id
-    except:
-        return False, None
+        etag = None
+        match_etag = re.search(r'<d:getetag>(.*?)</d:getetag>', resp.text)
+        if match_etag:
+            etag = match_etag.group(1).strip('"')
+            
+        size = 0
+        match_size = re.search(r'<d:getcontentlength>(.*?)</d:getcontentlength>', resp.text)
+        if match_size:
+            size = int(match_size.group(1))
+
+        return is_fav, file_id, etag, size
+    except Exception as e:
+        logger.error(f"Metadata error for {file_path}: {e}")
+        return False, None, None, 0
 
 def process_file(file):
     r.incr("stats:last_scan_found")
     if not file.lower().endswith(('.jpg', '.jpeg', '.webp', '.png')):
-        logger.info(f"Skipping non-image file: {file}")
         return
     
-    # Download for EXIF
-    local_path = f"/tmp/{os.path.basename(file)}"
+    # 1. Fetch metadata and check cache
+    is_fav, file_id, etag, size = get_metadata(file)
+    
+    cached = r.hgetall(f"photo:{file}")
+    if cached and cached.get('etag') == etag and etag:
+        # Skip download and processing if etag matches
+        # Just update the pool to ensure it's still there
+        r.zadd("photo_pool", {f"photo:{file}": int(cached.get('weight', 10))})
+        return
+
+    # 2. Prefer partial download for EXIF (Fetch first 128KB)
+    url = NC_URL + '/' + file.lstrip('/')
     timestamp = "Unknown"
     gps = "Unknown"
     
     try:
-        client.download_sync(remote_path=file, local_path=local_path)
-        timestamp, gps = get_exif_data(local_path)
-        if os.path.exists(local_path):
-            os.remove(local_path)
+        # Most EXIF data is in the first few KB
+        # Fetching 128KB is usually enough and much faster than full download
+        resp = session.get(url, headers={'Range': 'bytes=0-131071'})
+        if resp.status_code in [200, 206]:
+            timestamp, gps = get_exif_data_from_bytes(resp.content)
     except Exception as e:
-        logger.error(f"Error processing {file}: {e}")
+        logger.error(f"Error reading EXIF for {file}: {e}")
 
-    # Logic for weights
-    # Base weight for unknown date
+    # 3. Calculate Weight
     weight = 10 
-    
     if timestamp != "Unknown":
         try:
-            # Parse EXIF date format: YYYY:MM:DD HH:MM:SS
             dt = datetime.strptime(timestamp, "%Y:%m:%d %H:%M:%S")
             age_years = (datetime.now() - dt).days / 365.0
-            
-            # Exponential decay: Newer photos have higher weight
-            # Factor 0.85 means weight reduces by ~15% every year
-            # Age 0: 100
-            # Age 5: ~44
-            # Age 10: ~19
-            # Age 20: ~3
             weight = int(100 * (0.85 ** max(0, age_years)))
-        except Exception as e:
-            logger.warning(f"Could not calculate age for {file}: {e}")
+        except:
+            pass
 
-    is_fav, file_id = get_metadata(file)
     if is_fav: weight *= 5
-    
-    # Ensure minimum weight of 1
     weight = max(1, weight)
 
-    # 2. Store in Redis
+    # 4. Store in Redis
     r.hset(f"photo:{file}", mapping={
         "path": file,
         "weight": weight,
         "timestamp": timestamp,
         "gps": gps,
-        "file_id": file_id or ""
+        "file_id": file_id or "",
+        "etag": etag or "",
+        "size": size
     })
     r.zadd("photo_pool", {f"photo:{file}": weight})
     r.incr("stats:last_scan_processed")
-    logger.info(f"Processed {file}: Weight={weight}, Date={timestamp}, GPS={gps}")
+    logger.info(f"Processed {file}: Weight={weight}, Cached={bool(cached)}")
 
-def scan_recursive(path):
+def scan_recursive(path, executor):
     try:
-        # Add to scanned paths
         r.sadd("stats:scanned_paths", path)
-        logger.info(f"Scanning directory: {path}")
-        
         items = client.list(path)
         if not items: return
 
-        # Check if the directory contains the ignore file
+        # Check if directory is ignored
         for item in items[1:]:
-            full_path = item
-            if not item.startswith('/'):
-                 full_path = os.path.join(path, item)
-            
-            # Use basename to check for ignore file (handle both files and directories if accidentally named so)
-            if os.path.basename(full_path.rstrip('/')) == IGNORE_FILE:
-                logger.info(f"Directory {path} contains {IGNORE_FILE}, skipping.")
+            fn = os.path.basename(item.rstrip('/'))
+            if fn == IGNORE_FILE:
+                logger.info(f"Ignoring {path}")
                 return
 
-        # First item is the directory itself, skip it
         for item in items[1:]:
-            logger.info(f"Found item in {path}: {item}")
+            full_path = item if item.startswith('/') else os.path.join(path, item)
             
-            full_path = item
-            if not item.startswith('/'):
-                 full_path = os.path.join(path, item)
-            
-            # Check if directory (trailing slash convention)
             if full_path.endswith('/'):
-                scan_recursive(full_path)
+                scan_recursive(full_path, executor)
             else:
-                process_file(full_path)
+                executor.submit(process_file, full_path)
                 
     except Exception as e:
         logger.error(f"Error scanning {path}: {e}")
 
 def run_scan():
     photo_path = os.getenv('NC_PHOTO_PATH', '/Photos/')
-    
-    # Reset stats
     r.set("stats:last_scan_found", 0)
     r.set("stats:last_scan_processed", 0)
     r.delete("stats:scanned_paths")
     
-    logger.info(f"Starting recursive scan of {photo_path}")
-    scan_recursive(photo_path)
+    logger.info(f"Scanning {photo_path} with {MAX_WORKERS} threads...")
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+        scan_recursive(photo_path, executor)
+
+if __name__ == "__main__":
+    cron_schedule = os.getenv('SCAN_CRON', '0 1 * * *') # Default daily at 1 AM
+    logger.info(f"Scanner started. Schedule: {cron_schedule}")
+
+    # Run immediately on startup
+    logger.info("Starting initial scan...")
+    r.set("scanner:status", "running")
+    run_scan()
+    r.set("scanner:status", "idle")
+    r.set("stats:last_scan_time", datetime.now().isoformat())
+
+    while True:
+        try:
+            now = datetime.now()
+            iter = croniter(cron_schedule, now)
+            next_run = iter.get_next(datetime)
+            delay = (next_run - now).total_seconds()
+            
+            logger.info(f"Next scan scheduled for {next_run} (in {int(delay)} seconds)")
+            if delay > 0:
+                time.sleep(delay)
+            
+            logger.info("Starting scheduled scan...")
+            r.set("scanner:status", "running")
+            run_scan()
+            r.set("scanner:status", "idle")
+            r.set("stats:last_scan_time", datetime.now().isoformat())
+        except Exception as e:
+            logger.error(f"Error in scheduler loop: {e}")
+            time.sleep(60) # Retry after 1 min on error
 
 if __name__ == "__main__":
     cron_schedule = os.getenv('SCAN_CRON', '0 1 * * *') # Default daily at 1 AM
