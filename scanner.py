@@ -43,19 +43,22 @@ MAX_WORKERS = int(os.getenv('SCANNER_PARALLEL', '4'))
 def get_exif_data_from_bytes(data):
     try:
         img = Image.open(io.BytesIO(data))
-        if not img._getexif():
+        # Use getexif() instead of _getexif() for better format support (WebP, etc)
+        exif_raw = img.getexif()
+        if not exif_raw:
             return "Unknown", "Unknown"
             
-        exif = { ExifTags.TAGS[k]: v for k, v in img._getexif().items() if k in ExifTags.TAGS }
+        exif = { ExifTags.TAGS[k]: v for k, v in exif_raw.items() if k in ExifTags.TAGS }
         
-        # Date
+        # Date taken is often in tag 36867 (DateTimeOriginal) 
+        # but Tags mapping is more robust
         date_taken = exif.get('DateTimeOriginal', 'Unknown')
+        if date_taken == "Unknown":
+            # Fallback to other date tags
+            date_taken = exif.get('DateTime', 'Unknown')
         
         # GPS
-        gps_info = exif.get('GPSInfo')
-        gps_coords = "Unknown"
-        if gps_info:
-            gps_coords = "Present" 
+        gps_coords = "Present" if 34853 in exif_raw else "Unknown"
             
         return date_taken, gps_coords
     except Exception as e:
@@ -104,17 +107,21 @@ def process_file(file):
         # Skip download and processing if etag matches
         # Just update the pool to ensure it's still there
         r.zadd("photo_pool", {f"photo:{file}": int(cached.get('weight', 10))})
+        # Add a very infrequent log or just don't log at all for huge speed
+        # But for debugging, let's keep it visible
+        if r.incr("stats:logs_skipped") % 100 == 0:
+             logger.info(f"Skipped {file} (cached and unchanged)...")
         return
 
-    # 2. Prefer partial download for EXIF (Fetch first 128KB)
+    # 2. Prefer partial download for EXIF (Fetch first 256KB)
     url = NC_URL + '/' + file.lstrip('/')
     timestamp = "Unknown"
     gps = "Unknown"
     
     try:
         # Most EXIF data is in the first few KB
-        # Fetching 128KB is usually enough and much faster than full download
-        resp = session.get(url, headers={'Range': 'bytes=0-131071'})
+        # Fetching 256KB is usually enough even for WebP with chunks
+        resp = session.get(url, headers={'Range': 'bytes=0-262143'})
         if resp.status_code in [200, 206]:
             timestamp, gps = get_exif_data_from_bytes(resp.content)
     except Exception as e:
@@ -122,12 +129,33 @@ def process_file(file):
 
     # 3. Calculate Weight
     weight = 10 
+    
+    # Fallback: Try to parse date from folder path if EXIF is missing
+    if timestamp == "Unknown":
+        # Look for YYYY-MM-DD or YYYYMMDD in path (greedy check)
+        date_match = re.search(r'(\d{4})[-_]?(\d{2})[-_]?(\d{2})', file)
+        if date_match:
+            y, m, d = date_match.groups()
+            # Simple validation to avoid matching high numbers like 99999999
+            if 1970 <= int(y) <= 2100 and 1 <= int(m) <= 12 and 1 <= int(d) <= 31:
+                timestamp = f"{y}:{m}:{d} 12:00:00"
+                logger.debug(f"Guessed date from path for {file}: {timestamp}")
+
     if timestamp != "Unknown":
         try:
             dt = datetime.strptime(timestamp, "%Y:%m:%d %H:%M:%S")
             age_years = (datetime.now() - dt).days / 365.0
+            # Exponential decay: Newer photos are much more likely, 
+            # but older photos still appear occasionally.
             weight = int(100 * (0.85 ** max(0, age_years)))
-        except:
+            
+            # "Memory of the day" bonus: 10x weight if month and day match today
+            now = datetime.now()
+            if dt.month == now.month and dt.day == now.day:
+                weight *= 10
+                logger.info(f"Memory Bonus (10x) for {file} (Date: {dt.date()})")
+        except Exception as e:
+            logger.debug(f"Weight calculation failed for {file}: {e}")
             pass
 
     if is_fav: weight *= 5
@@ -180,37 +208,6 @@ def run_scan():
     logger.info(f"Scanning {photo_path} with {MAX_WORKERS} threads...")
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
         scan_recursive(photo_path, executor)
-
-if __name__ == "__main__":
-    cron_schedule = os.getenv('SCAN_CRON', '0 1 * * *') # Default daily at 1 AM
-    logger.info(f"Scanner started. Schedule: {cron_schedule}")
-
-    # Run immediately on startup
-    logger.info("Starting initial scan...")
-    r.set("scanner:status", "running")
-    run_scan()
-    r.set("scanner:status", "idle")
-    r.set("stats:last_scan_time", datetime.now().isoformat())
-
-    while True:
-        try:
-            now = datetime.now()
-            iter = croniter(cron_schedule, now)
-            next_run = iter.get_next(datetime)
-            delay = (next_run - now).total_seconds()
-            
-            logger.info(f"Next scan scheduled for {next_run} (in {int(delay)} seconds)")
-            if delay > 0:
-                time.sleep(delay)
-            
-            logger.info("Starting scheduled scan...")
-            r.set("scanner:status", "running")
-            run_scan()
-            r.set("scanner:status", "idle")
-            r.set("stats:last_scan_time", datetime.now().isoformat())
-        except Exception as e:
-            logger.error(f"Error in scheduler loop: {e}")
-            time.sleep(60) # Retry after 1 min on error
 
 if __name__ == "__main__":
     cron_schedule = os.getenv('SCAN_CRON', '0 1 * * *') # Default daily at 1 AM
